@@ -1,0 +1,42 @@
+name: Observe public prices
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+
+permissions: {}
+
+concurrency:
+  group: public-price-receipts
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    if: github.event.repository.private == false && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      contents: write
+    env:
+      OBSERVER_REPOSITORY_PUBLIC: 'true'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Check out the dedicated public repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+      - name: Run offline checks
+        run: python3 -m unittest -v
+      - name: Capture public prices without credentials
+        run: python3 collector.py
+      - name: Preserve the immutable receipt in Git
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- data
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Record public prices (run ${GITHUB_RUN_ID})"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
